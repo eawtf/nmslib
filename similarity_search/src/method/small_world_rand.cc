@@ -444,6 +444,7 @@ template <typename dist_t>
 void 
 SmallWorldRand<dist_t>::searchForIndexing(const Object *queryObj,
                                           priority_queue<EvaluatedMSWNodeDirect<dist_t>> &resultSet,
+                                          priority_queue<EvaluatedMSWNodeDirect<dist_t>> &forWhomElemClosest,
                                           IdType nextNodeIdUpperBound) const
 {
 /*
@@ -465,11 +466,18 @@ SmallWorldRand<dist_t>::searchForIndexing(const Object *queryObj,
   MSWNode* provider = pEntryPoint_;
   CHECK_MSG(provider != nullptr, "Bug: there is not entry point set!")
 
-  priority_queue <dist_t>                     closestDistQueue;                      
-  priority_queue <EvaluatedMSWNodeReverse<dist_t>>   candidateSet; 
+    priority_queue <dist_t>                     closestDistQueue;
+    priority_queue <dist_t>                     closestDistQueueReverse;
+
+    priority_queue <EvaluatedMSWNodeReverse<dist_t>>   candidateSet;
+    priority_queue <EvaluatedMSWNodeReverse<dist_t>>   candidateSetReverse;
 
   dist_t d = use_proxy_dist_ ?  space_.ProxyDistance(provider->getData(), queryObj) : 
                                 space_.IndexTimeDistance(provider->getData(), queryObj);
+
+  dist_t dReverse = use_proxy_dist_ ?  space_.ProxyDistance(provider->getData(), queryObj) :
+              space_.IndexTimeDistance(provider->getData(), queryObj);
+
   EvaluatedMSWNodeReverse<dist_t> ev(d, provider);
 
   candidateSet.push(ev);
@@ -530,8 +538,13 @@ SmallWorldRand<dist_t>::searchForIndexing(const Object *queryObj,
                 "Bug: nodeId (" + ConvertToString(nodeId) + ") > nextNodeIdUpperBound (" + ConvertToString(nextNodeIdUpperBound));
       if (!visitedBitset[nodeId]) {
         visitedBitset[nodeId] = true;
-        d = use_proxy_dist_ ? space_.ProxyDistance(pNeighbor->getData(), queryObj) : 
+        d = use_proxy_dist_ ? space_.ProxyDistance(pNeighbor->getData(), queryObj) :
                               space_.IndexTimeDistance(pNeighbor->getData(), queryObj);
+
+      dReverse = use_proxy_dist_ ? space_.ProxyDistance(queryObj, pNeighbor->getData()) :
+          space_.IndexTimeDistance(queryObj, pNeighbor->getData());
+
+
 
         if (closestDistQueue.size() < efConstruction_ || d < closestDistQueue.top()) {
           closestDistQueue.push(d);
@@ -541,12 +554,32 @@ SmallWorldRand<dist_t>::searchForIndexing(const Object *queryObj,
           candidateSet.emplace(d, pNeighbor);
         }
 
-        if (resultSet.size() < NN_ || resultSet.top().getDistance() > d) {
-          resultSet.emplace(d, pNeighbor);
-          if (resultSet.size() > NN_) { // TODO check somewhere that NN > 0
-            resultSet.pop();
+
+      if (closestDistQueueReverse.size() < efConstruction_ || dReverse < closestDistQueueReverse.top()) {
+          closestDistQueueReverse.push(d);
+          if (closestDistQueueReverse.size() > efConstruction_) {
+              closestDistQueueReverse.pop();
           }
-        }
+          candidateSetReverse.emplace(dReverse, pNeighbor);
+      }
+
+
+          if (resultSet.size() < NN_ || resultSet.top().getDistance() > d) {
+              resultSet.emplace(d, pNeighbor);
+              if (resultSet.size() > NN_) { // TODO check somewhere that NN > 0
+                  resultSet.pop();
+              }
+          }
+
+
+          if (forWhomElemClosest.size() < NN_ || forWhomElemClosest.top().getDistance() > dReverse) {
+              forWhomElemClosest.emplace(dReverse, pNeighbor);
+              if (forWhomElemClosest.size() > NN_) { // TODO check somewhere that NN > 0
+                  forWhomElemClosest.pop();
+              }
+          }
+
+
       }
     }
   }
@@ -571,16 +604,23 @@ void SmallWorldRand<dist_t>::add(MSWNode *newElement, IdType nextNodeIdUpperBoun
   }
 
   {
-    priority_queue<EvaluatedMSWNodeDirect<dist_t>> resultSet;
+      priority_queue<EvaluatedMSWNodeDirect<dist_t>> resultSet;
+      priority_queue<EvaluatedMSWNodeDirect<dist_t>> forWhomElemClosest;
 
-    searchForIndexing(newElement->getData(), resultSet, nextNodeIdUpperBound);
+    searchForIndexing(newElement->getData(), resultSet, forWhomElemClosest, nextNodeIdUpperBound);
 
     // TODO actually we might need to add elements in the reverse order in the future.
     // For the current implementation, however, the order doesn't seem to matter
-    while (!resultSet.empty()) {
-      MSWNode::link(resultSet.top().getMSWNode(), newElement);
-      resultSet.pop();
-    }
+      while (!resultSet.empty()) {
+          MSWNode::link(resultSet.top().getMSWNode(), newElement);
+          resultSet.pop();
+      }
+
+      while (!forWhomElemClosest.empty()) {
+          MSWNode::link(forWhomElemClosest.top().getMSWNode(), newElement);
+          forWhomElemClosest.pop();
+      }
+
   }
 
   addCriticalSection(newElement);

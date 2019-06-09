@@ -267,6 +267,7 @@ public:
    
   void searchForIndexing(const Object *queryObj,
                          std::priority_queue<EvaluatedMSWNodeDirect<dist_t>> &resultSet,
+                         std::priority_queue<EvaluatedMSWNodeDirect<dist_t>> &forWhomElemClosest,
                          IdType maxInternalId) const;
   void add(MSWNode *newElement, IdType maxInternalId);
   void addCriticalSection(MSWNode *newElement);
